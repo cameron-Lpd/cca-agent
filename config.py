@@ -19,8 +19,9 @@ CLIENTS_PATH = ONEDRIVE_BASE / "Marketing" / "Clients"
 # ~/OneDrive - Pharma D-mand/Marketing/Cam's work/Work/PD-Create/Examples/
 
 # ── Agent webhook server ──────────────────────────────────────────────────────
-AGENT_HOST = os.environ.get("AGENT_HOST", "localhost")
-AGENT_PORT = int(os.environ.get("AGENT_PORT", "8765"))
+AGENT_HOST = os.environ.get("AGENT_HOST", "0.0.0.0")
+# Railway injects PORT; fall back to AGENT_PORT, then 8765
+AGENT_PORT = int(os.environ.get("PORT", os.environ.get("AGENT_PORT", "8765")))
 AGENT_CALLBACK_URL = os.environ.get(
     "AGENT_CALLBACK_URL", f"http://localhost:{AGENT_PORT}"
 )
