@@ -1,0 +1,41 @@
+name: Weekly Webinar Scan
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC (09:00 UK time)
+    - cron: "0 8 * * 1"
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run webinar agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: python main.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "pharmad-webinar-agent"
+          git config user.email "actions@github.com"
+          git add webinar_state.json
+          git diff --staged --quiet || git commit -m "chore: update webinar state [skip ci]"
+          git push
