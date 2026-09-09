@@ -4,3 +4,4 @@ __pycache__/
 webinar_state.json
 references/
 .railwayignore
+.github/
