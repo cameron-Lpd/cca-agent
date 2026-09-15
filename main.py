@@ -26,13 +26,27 @@ def run_monitor(dry_run: bool = False) -> None:
 
     while True:
         try:
+            # Check for a manual trigger first
+            triggered = server.trigger_event.is_set()
+            if triggered:
+                server.trigger_event.clear()
+                forced_slug = server.force_slug[0] if server.force_slug else None
+                server.force_slug.clear()
+                print(f"[Monitor] Manual trigger received. Forced slug: {forced_slug or 'none (scan all)'}")
+
             webinars = fetch_upcoming_webinars()
             seen = load_seen()
 
-            new_webinars = [w for w in webinars if w.slug not in seen]
+            if triggered and forced_slug:
+                # Match webinar by slug prefix
+                new_webinars = [w for w in webinars if w.slug == forced_slug or w.slug.startswith(forced_slug)]
+                if not new_webinars:
+                    print(f"[Monitor] No webinar found matching slug '{forced_slug}'.")
+            else:
+                new_webinars = [w for w in webinars if w.slug not in seen]
 
             if new_webinars:
-                print(f"[Monitor] {len(new_webinars)} new webinar(s) detected.")
+                print(f"[Monitor] {len(new_webinars)} webinar(s) to process.")
                 for listing in new_webinars:
                     if dry_run:
                         print(f"[DRY RUN] Would process: {listing.title} ({listing.date})")
@@ -50,7 +64,23 @@ def run_monitor(dry_run: bool = False) -> None:
         except Exception as e:
             print(f"[Monitor] Error during scan: {e}")
 
-        time.sleep(config.POLL_INTERVAL)
+        # Ping the hub LinkedIn monitor endpoint so it doesn't need its own cron
+        try:
+            import urllib.request
+            hub_monitor_url = config.HUB_URL.rstrip("/") + "/api/cron/linkedin-monitor"
+            req = urllib.request.Request(
+                hub_monitor_url,
+                headers={"Authorization": f"Bearer {config.HUB_SECRET}"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                print(f"[Monitor] LinkedIn monitor ping: {resp.status}")
+        except Exception as e:
+            print(f"[Monitor] LinkedIn monitor ping failed (non-fatal): {e}")
+
+        # Wait for poll interval OR a trigger signal (whichever comes first)
+        server.trigger_event.wait(timeout=config.POLL_INTERVAL)
+        if not server.trigger_event.is_set():
+            pass  # normal timeout — continue loop
 
 
 if __name__ == "__main__":

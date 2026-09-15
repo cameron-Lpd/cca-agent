@@ -69,8 +69,28 @@ class ApprovalBus:
 
 class _Handler(BaseHTTPRequestHandler):
     bus: ApprovalBus = None  # injected by WebhookServer
+    trigger_event: threading.Event = None  # injected by WebhookServer
+    force_slug: list = None  # injected by WebhookServer — mutable list used as optional slot
+
+    def do_GET(self):
+        if self.path == "/health":
+            self._respond(200, {"status": "ok"})
+        else:
+            self._respond(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path == "/trigger" or self.path.startswith("/trigger?"):
+            import urllib.parse
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            slug = params.get("slug", [None])[0]
+            if slug:
+                self.force_slug.clear()
+                self.force_slug.append(slug)
+            self.trigger_event.set()
+            self._respond(200, {"status": "triggered", "slug": slug})
+            return
+
         if self.path != "/webhook/hub":
             self._respond(404, {"error": "not found"})
             return
@@ -121,11 +141,15 @@ class WebhookServer:
         self.host = host
         self.port = port
         self.bus = bus
+        self.trigger_event = threading.Event()
+        self.force_slug: list = []
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
 
     def start(self):
         _Handler.bus = self.bus
+        _Handler.trigger_event = self.trigger_event
+        _Handler.force_slug = self.force_slug
         self._server = HTTPServer((self.host, self.port), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
