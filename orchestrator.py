@@ -52,15 +52,16 @@ class CCAOrchestrator:
         print(format_schedule(post_schedule))
 
         # ── Content generation + hub loop ─────────────────────────────────────
-        attempt = 0
-        while True:
-            attempt += 1
-            print(f"\n[Orchestrator] Generating content (attempt {attempt})...")
-            ad_campaign, dm_sequence = generate_final_content(detail, post_schedule)
+        MAX_ATTEMPTS = 3
+        ad_campaign, dm_sequence = "", ""
+        approved = False
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            print(f"\n[Orchestrator] Generating content (attempt {attempt}/{MAX_ATTEMPTS})...")
+            ad_campaign, dm_sequence = generate_final_content(detail, post_schedule, mock=not config.ANTHROPIC_API_KEY)
 
             print("[Orchestrator] Delivering drafts to hub...")
             self.bus.arm_hub()
-            deliver_to_hub(ad_campaign, dm_sequence, detail, post_schedule)
+            deliver_to_hub(ad_campaign, dm_sequence, detail, post_schedule, source_id=listing.slug)
 
             print("[Orchestrator] Waiting for hub approval...")
             decision, _ = self.bus.wait_hub(timeout=config.APPROVAL_TIMEOUT)
@@ -71,17 +72,26 @@ class CCAOrchestrator:
 
             if decision == "approve":
                 print("[Orchestrator] Drafts approved.")
+                approved = True
                 break
 
-            print(f"[Orchestrator] Drafts rejected (attempt {attempt}). Regenerating...")
+            print(f"[Orchestrator] Drafts rejected (attempt {attempt}/{MAX_ATTEMPTS}).")
+            if attempt == MAX_ATTEMPTS:
+                print("[Orchestrator] Max attempts reached. Marking as seen and returning to idle.")
+                seen = load_seen()
+                save_seen(seen | {listing.slug})
+                return
+
+        if not approved:
+            return
 
         # ── OneDrive save ─────────────────────────────────────────────────────
         print("\n[Orchestrator] Saving to OneDrive...")
         try:
             saved_path = save_drafts(ad_campaign, dm_sequence, detail)
             print(f"[Orchestrator] Saved to: {saved_path}")
-        except FileNotFoundError as e:
-            print(f"[Orchestrator] OneDrive save failed: {e}")
+        except Exception as e:
+            print(f"[Orchestrator] OneDrive save failed ({type(e).__name__}): {e}")
             print("[Orchestrator] Files not saved — manual save required.")
 
         # ── Mark webinar as seen ──────────────────────────────────────────────
@@ -97,10 +107,17 @@ class CCAOrchestrator:
         print("[Gate 1] Sending detection to hub...")
         self.bus.arm_gate1()
         try:
-            deliver_detection_to_hub(listing)
+            _, hub_status, detection_status = deliver_detection_to_hub(listing)
         except Exception as e:
             print(f"[Gate 1] Failed to reach hub: {e}")
             return False
+
+        if hub_status == "already_received":
+            if detection_status == "REJECTED":
+                print("[Gate 1] Detection was previously rejected — skipping.")
+                return False
+            print("[Gate 1] Hub already has this detection — treating as pre-approved.")
+            return True
 
         timeout_h = config.APPROVAL_TIMEOUT // 3600
         print(f"[Gate 1] Waiting for hub decision (timeout: {timeout_h}h)...")

@@ -80,9 +80,8 @@ def map_post_dates(
         is_last=True,
     ))
 
-    # 11-post rule: drop post 1 if its date is on or before today
-    if posts[0].date <= today:
-        posts = posts[1:]
+    # Drop all posts whose date has already passed (keep post 12 regardless)
+    posts = [p for p in posts if p.date > today or p.is_last]
 
     return posts
 

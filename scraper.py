@@ -347,6 +347,11 @@ def _iso_from_display(raw: str) -> str:
     if not raw:
         return ""
     normalised = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", raw.strip())
+    # Strip leading weekday name e.g. "Thursday 18 September 2026" → "18 September 2026"
+    normalised = re.sub(
+        r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*",
+        "", normalised, flags=re.I,
+    )
     for fmt in ("%d/%m/%Y", "%d %B %Y", "%B %d, %Y"):
         try:
             return datetime.strptime(normalised, fmt).strftime("%Y-%m-%d")
