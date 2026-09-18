@@ -12,6 +12,7 @@ Drop the 3 top-performing historical campaigns/DM sequences into those files.
 The agent loads them automatically on each run.
 """
 
+import json
 from pathlib import Path
 
 import anthropic
@@ -27,24 +28,73 @@ _MODEL = "claude-sonnet-4-6"
 
 # ── Reference loader ──────────────────────────────────────────────────────────
 
-def load_references() -> dict:
-    """
-    Load the 3 campaign and 3 DM reference examples from references/.
-    Returns a dict with keys 'campaigns' and 'dms', each a list of 3 strings.
-    Missing files are replaced with a placeholder notice.
-    """
+def _load_static_references() -> dict:
+    """Load static reference files from references/ as fallback."""
     refs: dict = {"campaigns": [], "dms": []}
     for i in range(1, 4):
         for key, prefix in [("campaigns", "campaign"), ("dms", "dm")]:
             path = config.REFERENCES_DIR / f"{prefix}_{i}.md"
             if path.exists():
                 refs[key].append(path.read_text(encoding="utf-8"))
-            else:
-                refs[key].append(
-                    f"[Reference {prefix}_{i} not yet provided — "
-                    f"drop the file at references/{prefix}_{i}.md]"
-                )
     return refs
+
+
+def _load_hub_references() -> dict | None:
+    """
+    Fetch approved campaigns and DM sequences from the hub as references.
+    Returns None if the hub is unreachable or returns no content.
+    """
+    if not config.HUB_URL or not config.HUB_CRON_SECRET:
+        return None
+    import urllib.request
+    import urllib.error
+    try:
+        req = urllib.request.Request(
+            f"{config.HUB_URL.rstrip('/')}/api/agent/references?limit=10",
+            headers={"Authorization": f"Bearer {config.HUB_CRON_SECRET}"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        campaigns = [r["text"] for r in data.get("campaigns", []) if r.get("text")]
+        dms = [r["text"] for r in data.get("dms", []) if r.get("text")]
+        if not campaigns and not dms:
+            return None
+        print(f"[Content] Loaded {len(campaigns)} campaign reference(s) and {len(dms)} DM reference(s) from hub.")
+        return {"campaigns": campaigns, "dms": dms}
+    except Exception as e:
+        print(f"[Content] Could not load hub references ({e}) — using static files.")
+        return None
+
+
+def load_references() -> dict:
+    """
+    Load reference examples for content generation.
+    Prefers live hub data (all approved campaigns) over static files.
+    Falls back to static files if hub is unavailable.
+    Always returns at least 3 of each type (padded with static files if needed).
+    """
+    hub = _load_hub_references()
+    static = _load_static_references()
+
+    campaigns = (hub or {}).get("campaigns", []) or static.get("campaigns", [])
+    dms = (hub or {}).get("dms", []) or static.get("dms", [])
+
+    # Ensure at least 3 of each — pad with static files if hub has fewer
+    if len(campaigns) < 3:
+        for s in static.get("campaigns", []):
+            if s not in campaigns:
+                campaigns.append(s)
+            if len(campaigns) >= 3:
+                break
+
+    if len(dms) < 3:
+        for s in static.get("dms", []):
+            if s not in dms:
+                dms.append(s)
+            if len(dms) >= 3:
+                break
+
+    return {"campaigns": campaigns, "dms": dms}
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -113,16 +163,22 @@ def generate_final_content(
     refs = load_references()
     base = _build_base_template(detail, post_schedule)
 
-    print("[Content] Generating 3 ad campaign drafts...")
+    # Use up to 5 references per type — more variety = better drafts
+    campaign_refs = refs["campaigns"][:5]
+    dm_refs = refs["dms"][:5]
+    n_campaign = max(3, min(len(campaign_refs), 5))
+    n_dm = max(3, min(len(dm_refs), 5))
+
+    print(f"[Content] Generating {n_campaign} ad campaign drafts ({len(campaign_refs)} references available)...")
     campaign_drafts = [
-        _generate_campaign_draft(base, refs["campaigns"][i], i + 1)
-        for i in range(3)
+        _generate_campaign_draft(base, campaign_refs[i % len(campaign_refs)], i + 1)
+        for i in range(n_campaign)
     ]
 
-    print("[Content] Generating 3 DM sequence drafts...")
+    print(f"[Content] Generating {n_dm} DM sequence drafts ({len(dm_refs)} references available)...")
     dm_drafts = [
-        _generate_dm_draft(base, refs["dms"][i], i + 1)
-        for i in range(3)
+        _generate_dm_draft(base, dm_refs[i % len(dm_refs)], i + 1)
+        for i in range(n_dm)
     ]
 
     print("[Content] Merging campaign drafts...")
