@@ -94,7 +94,7 @@ def _fire_due_posts() -> None:
 
 def _post_fire_loop() -> None:
     """Run _fire_due_posts every 15 minutes independently of the webinar poll."""
-    POST_FIRE_INTERVAL = 900  # 15 minutes
+    POST_FIRE_INTERVAL = 60  # 1 minute
     while True:
         time.sleep(POST_FIRE_INTERVAL)
         _fire_due_posts()

@@ -5,3 +5,5 @@ webinar_state.json
 references/
 .railwayignore
 .github/
+
+.vercel
