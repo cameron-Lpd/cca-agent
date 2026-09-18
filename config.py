@@ -29,6 +29,7 @@ AGENT_CALLBACK_URL = os.environ.get(
 # ── Hub ───────────────────────────────────────────────────────────────────────
 HUB_URL = os.environ.get("HUB_URL", "http://localhost:3000")
 HUB_SECRET = os.environ.get("HUB_SECRET", "")
+HUB_CRON_SECRET = os.environ.get("HUB_CRON_SECRET", "")
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 NOTIFY_RECIPIENTS = ["cameron@pharmad-mand.com"]
@@ -40,6 +41,13 @@ SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 # ── Anthropic ─────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# ── LinkedIn company page monitor ────────────────────────────────────────────
+# org_id: the numeric ID from linkedin.com/company/<id> (or the slug)
+LINKEDIN_ORG_ID = os.environ.get("LINKEDIN_ORG_ID", "")
+# li_at: Cameron's LinkedIn session cookie — copy from browser DevTools
+# Application → Cookies → .linkedin.com → li_at
+LINKEDIN_SESSION_COOKIE = os.environ.get("LINKEDIN_SESSION_COOKIE", "")
 
 # ── Monitor ───────────────────────────────────────────────────────────────────
 # How often the monitor polls the webinars page (seconds). Default: 1 hour.

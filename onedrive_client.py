@@ -21,6 +21,26 @@ from scraper import WebinarDetail
 _SIMILARITY_THRESHOLD = 0.55  # minimum ratio for a fuzzy match
 
 
+def has_existing_campaign(listing_title: str, companies: list[str]) -> bool:
+    """
+    Returns True if an ad_campaign.md already exists in the OneDrive folder
+    matching this webinar. Used to skip webinars that are already covered.
+    """
+    clients_root = config.CLIENTS_PATH
+    if not clients_root.exists():
+        return False
+    client_folder = _find_client_folder(clients_root, companies)
+    if client_folder is None:
+        return False
+    webinar_folder = _find_webinar_folder(client_folder, listing_title)
+    if webinar_folder is None:
+        return False
+    exists = (webinar_folder / "ad_campaign.md").exists()
+    if exists:
+        print(f"[OneDrive] Campaign already exists: {webinar_folder / 'ad_campaign.md'}")
+    return exists
+
+
 def save_drafts(
     ad_campaign: str,
     dm_sequence: str,
