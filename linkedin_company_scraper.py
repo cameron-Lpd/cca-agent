@@ -62,18 +62,19 @@ def _extract_images(update: dict) -> list[str]:
 
     content = update.get("content", {})
     if not isinstance(content, dict):
-        return []
+        content = {}
 
     # Unwrap typed content key (e.g. com.linkedin.voyager.feed.render.ImageComponent)
+    unwrapped = content
     for key in list(content.keys()):
         if key.startswith("com.linkedin."):
-            content = content[key]
+            unwrapped = content[key]
             break
 
     urls: list[str] = []
 
     # Path 1: images list (newer format)
-    images = content.get("images", [])
+    images = unwrapped.get("images", [])
     if isinstance(images, list):
         for img in images:
             if not isinstance(img, dict):
@@ -83,20 +84,13 @@ def _extract_images(update: dict) -> list[str]:
                 for attr in img.get("attributes", []):
                     vi = attr.get("vectorImage", {}) if isinstance(attr, dict) else {}
                     if isinstance(vi, dict) and vi.get("rootUrl"):
-                        root = vi["rootUrl"]
-                        arts = vi.get("artifacts", [])
-                        if arts:
-                            best = max(arts, key=lambda a: a.get("width", 0) if isinstance(a, dict) else 0)
-                            suffix = best.get("fileIdentifyingUrlPathSegment", "") if isinstance(best, dict) else ""
-                            url = root + suffix
-                        else:
-                            url = root
+                        url = _best_artifact_url(vi)
                         break
             if url and url not in urls:
                 urls.append(url)
 
     # Path 2: contentEntities thumbnails (older format)
-    for entity in content.get("contentEntities", []):
+    for entity in unwrapped.get("contentEntities", []):
         if not isinstance(entity, dict):
             continue
         for thumb in entity.get("thumbnails", []):
@@ -105,7 +99,48 @@ def _extract_images(update: dict) -> list[str]:
                 if url and url not in urls:
                     urls.append(url)
 
+    # Path 3: recursive walk — catches any nesting variation LinkedIn uses
+    if not urls:
+        urls = _walk_for_media_urls(update)
+
     return urls[:4]
+
+
+def _best_artifact_url(vi: dict) -> str:
+    """Pick the largest artifact from a vectorImage dict."""
+    root = vi.get("rootUrl", "")
+    arts = vi.get("artifacts", [])
+    if arts:
+        best = max(arts, key=lambda a: a.get("width", 0) if isinstance(a, dict) else 0)
+        suffix = best.get("fileIdentifyingUrlPathSegment", "") if isinstance(best, dict) else ""
+        return root + suffix
+    return root
+
+
+def _walk_for_media_urls(obj, _depth: int = 0, _seen: set | None = None) -> list[str]:
+    """Recursively walk any dict/list and collect LinkedIn CDN image URLs."""
+    if _seen is None:
+        _seen = set()
+    if _depth > 12:
+        return []
+    urls: list[str] = []
+    if isinstance(obj, dict):
+        # Collect from vectorImage nodes directly
+        if "rootUrl" in obj and "artifacts" in obj:
+            url = _best_artifact_url(obj)
+            if url and "media.licdn.com" in url and url not in _seen:
+                _seen.add(url)
+                urls.append(url)
+        for v in obj.values():
+            urls.extend(_walk_for_media_urls(v, _depth + 1, _seen))
+    elif isinstance(obj, list):
+        for item in obj:
+            urls.extend(_walk_for_media_urls(item, _depth + 1, _seen))
+    elif isinstance(obj, str):
+        if obj.startswith("https://media.licdn.com/dms/image/") and obj not in _seen:
+            _seen.add(obj)
+            urls.append(obj)
+    return urls
 
 
 def _extract_text(update: dict) -> str:
