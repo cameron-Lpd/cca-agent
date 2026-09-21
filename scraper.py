@@ -69,6 +69,11 @@ def fetch_upcoming_webinars() -> list[WebinarListing]:
     ]
 
 
+def fetch_all_webinars() -> list[WebinarListing]:
+    """Returns all webinars regardless of date — used for forced slug processing."""
+    return _fetch_all_listings()
+
+
 def _fetch_all_listings() -> list[WebinarListing]:
     resp = _get(WEBINARS_URL)
     soup = BeautifulSoup(resp.text, "html.parser")

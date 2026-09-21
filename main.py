@@ -126,8 +126,10 @@ def _monitor_loop(bus: ApprovalBus, server: WebhookServer, dry_run: bool) -> Non
             seen = load_seen()
 
             if triggered and forced_slug:
+                from scraper import fetch_all_webinars
+                all_webinars = fetch_all_webinars()
                 candidates = [
-                    w for w in webinars
+                    w for w in all_webinars
                     if w.slug == forced_slug or w.slug.startswith(forced_slug)
                 ]
                 if not candidates:
